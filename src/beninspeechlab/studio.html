@@ -29,7 +29,12 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <section><h2>2. Métadonnées et consentement</h2>
 <label for="speaker">Identifiant du locuteur</label><input id="speaker" type="text" value="speaker_001" maxlength="100">
 <label for="transcript">Transcription (facultatif)</label><textarea id="transcript" rows="3" placeholder="Écris exactement les mots prononcés en fon"></textarea>
-<label><input id="consent" type="checkbox"> Je confirme être le locuteur ou disposer de son consentement explicite pour ce dépôt de recherche interne.</label>
+<label for="licenseScope">Autorisation d'utilisation</label>
+<select id="licenseScope" style="width:100%;padding:12px;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px">
+<option value="research_internal">Recherche interne uniquement (par défaut)</option>
+<option value="dataset_release_approved">Diffusion du jeu de données explicitement autorisée</option>
+</select>
+<label><input id="consent" type="checkbox"> Je confirme disposer du consentement explicite du locuteur pour l'usage sélectionné ci-dessus, y compris la diffusion du jeu de données si cette option est choisie.</label>
 <button id="submit" disabled>Envoyer l'enregistrement</button>
 <p id="message" role="status" aria-live="polite"></p></section>
 <p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
@@ -43,7 +48,12 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <p>Écoute, transcris et valide les enregistrements conservés localement.</p>
 <button id="refresh" class="secondary">↻ Actualiser la bibliothèque</button>
 <div id="library" aria-live="polite">Chargement…</div></section>
-</main><script>
+<section><h2>5. Export du corpus ASR</h2>
+<p>Le ZIP contient uniquement les WAV approuvés, transcrits et autorisés pour la diffusion du jeu de données. Les enregistrements réservés à la recherche interne ne sont pas inclus.</p>
+<button id="exportAsr">↓ Exporter le corpus ASR (.zip)</button>
+<p id="exportMessage" role="status"></p>
+<small>Avant tout partage externe, vérifie les consentements et les droits d'utilisation. Ce prototype reste local.</small>
+</section></main><script>
 const $=id=>document.getElementById(id);
 let stream=null,recorder=null,chunks=[],recording=null,objectURL=null;
 const show=(msg,error=false)=>{$('message').textContent=msg;$('message').style.color=error?'#ffaaa1':'#a4e5ca'};
@@ -58,7 +68,7 @@ $('start').onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedi
 $('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
 $('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
 $('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
-$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope','research_internal');if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
+$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope',$('licenseScope').value);if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
 try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary();loadStats()}};
 
 async function loadLibrary(){
@@ -116,4 +126,16 @@ async function loadStats(){
 }
 $('refreshStats').onclick=loadStats;
 loadStats();
+$('exportAsr').onclick=async()=>{
+ const button=$('exportAsr');button.disabled=true;$('exportMessage').textContent='Préparation du ZIP…';
+ try{
+ const response=await fetch('/v1/export/asr');
+ if(!response.ok){let detail=await response.json();throw Error(detail.detail||'HTTP '+response.status)}
+ const blob=await response.blob();const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');a.href=url;a.download='beninspeechlab_fon_asr.zip';document.body.append(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),30000);
+ $('exportMessage').textContent='Archive téléchargée. Seuls les enregistrements éligibles sont inclus.';
+ }catch(e){$('exportMessage').textContent='Export impossible : '+e.message}
+ finally{button.disabled=false}
+};
 </script></body></html>
