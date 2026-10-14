@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording
+from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats
 
 app = FastAPI(title="BeninSpeechLab · Fon Speech Ingestion", version="0.1.0")
 
@@ -73,3 +73,9 @@ def recording_review(recording_id: str, payload: ReviewPayload, request: Request
     if result is None:
         raise HTTPException(404, "Recording not found")
     return result
+
+
+@app.get("/v1/stats")
+def stats(request: Request):
+    local_only(request)
+    return corpus_stats(Path(os.environ.get("BENINSPEECH_DATA", "./data")))
