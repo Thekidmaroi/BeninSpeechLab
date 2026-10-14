@@ -98,3 +98,54 @@ def export_manifest(root: Path, output: Path) -> int:
         for row in rows:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
     return len(rows)
+
+
+def list_recordings(root: Path) -> list[dict]:
+    """Private metadata listing; never expose filesystem paths."""
+    conn = init_db(root)
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id,speaker_id,language,duration_s,sample_rate,transcript,status,created_at "
+            "FROM recordings ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_recording_audio(root: Path, recording_id: str) -> Path | None:
+    conn = init_db(root)
+    try:
+        row = conn.execute("SELECT relative_path FROM recordings WHERE id=?", (recording_id,)).fetchone()
+        if row is None:
+            return None
+        path = (root / row[0]).resolve()
+        if not path.is_relative_to((root / "private_audio").resolve()) or not path.is_file():
+            return None
+        return path
+    finally:
+        conn.close()
+
+
+def review_recording(root: Path, recording_id: str, transcript: str, status: str) -> dict | None:
+    """An approved recording must have a nonempty human-reviewed transcript."""
+    if status not in {"pending_review", "approved", "rejected"}:
+        raise ValueError("Invalid review status")
+    text = transcript.strip()
+    if len(text) > 10000:
+        raise ValueError("Transcript too long")
+    if status == "approved" and not text:
+        raise ValueError("Approval requires a transcript")
+    conn = init_db(root)
+    try:
+        cur = conn.execute(
+            "UPDATE recordings SET transcript=?, status=? WHERE id=?",
+            (text or None, status, recording_id),
+        )
+        conn.commit()
+        if not cur.rowcount:
+            return None
+        return {"id": recording_id, "transcript": text or None, "status": status}
+    finally:
+        conn.close()
