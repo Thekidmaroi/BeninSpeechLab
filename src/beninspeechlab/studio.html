@@ -12,6 +12,12 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 #library article{border-top:1px solid #344960;padding:18px 0}#library article:first-child{border-top:0}
 #library textarea{margin-top:5px}#library select{padding:10px;border-radius:8px;background:#0b1423;color:white;border:1px solid #526681}
 #library .meta{font-size:.86rem;color:#aab9cd;overflow-wrap:anywhere}#library .feedback{font-size:.9rem}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{padding:17px;border:1px solid #38506c;border-radius:12px;background:#0e1c2f}
+.stat strong{display:block;font-size:1.65rem;margin-top:8px;color:#fff}
+.stat span{color:#aab9cd;font-size:.9rem}
+.progress{height:13px;background:#30445e;border-radius:20px;overflow:hidden;margin:12px 0}
+.progress div{height:100%;width:0;background:#ed735c;transition:width .3s}
 </style></head><body><main>
 <p class="muted">RESEARCH MVP · FON</p><h1>BeninSpeechLab Studio</h1>
 <p>Enregistre une phrase en fon, écoute-la et envoie-la à ton espace de collecte local.</p>
@@ -27,7 +33,13 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <button id="submit" disabled>Envoyer l'enregistrement</button>
 <p id="message" role="status" aria-live="polite"></p></section>
 <p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
-<section><h2>3. Bibliothèque et annotation</h2>
+<section><h2>3. Tableau de bord du corpus</h2>
+<p>Indicateurs calculés à partir de la base SQLite locale.</p>
+<button id="refreshStats" class="secondary">↻ Actualiser les statistiques</button>
+<div class="stats-grid" id="statsGrid" aria-live="polite"></div>
+<p id="validationLabel" class="muted"></p><div class="progress" aria-label="Progression des enregistrements approuvés"><div id="validationBar"></div></div>
+<p id="statsMessage" role="status"></p></section>
+<section><h2>4. Bibliothèque et annotation</h2>
 <p>Écoute, transcris et valide les enregistrements conservés localement.</p>
 <button id="refresh" class="secondary">↻ Actualiser la bibliothèque</button>
 <div id="library" aria-live="polite">Chargement…</div></section>
@@ -47,7 +59,7 @@ $('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start
 $('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
 $('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
 $('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope','research_internal');if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
-try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary()}};
+try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary();loadStats()}};
 
 async function loadLibrary(){
  const area=$('library');area.replaceChildren();const loading=document.createElement('p');loading.textContent='Chargement…';area.append(loading);
@@ -71,11 +83,37 @@ async function loadLibrary(){
  try{const res=await fetch('/v1/recordings/'+encodeURIComponent(item.id)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,status:select.value})});
  const result=await res.json();if(!res.ok)throw Error(typeof result.detail==='string'?result.detail:JSON.stringify(result.detail));
  feedback.textContent='Révision enregistrée : '+result.status;meta.textContent=item.id+' · '+result.status+' · '+item.language;
- }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false}};
+ }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false;loadStats()}};
  article.append(head,meta,audio,label,transcript,select,save,feedback);area.append(article);
  }
  }catch(e){area.textContent='Impossible de charger la bibliothèque : '+e.message}
 }
 $('refresh').onclick=loadLibrary;
 loadLibrary();
+function secondsLabel(n){const minutes=Math.floor(n/60);const seconds=(n%60).toFixed(1);return minutes+' min '+seconds+' s'}
+async function loadStats(){
+ const area=$('statsGrid');$('statsMessage').textContent='Chargement des statistiques…';
+ try{
+ const response=await fetch('/v1/stats');if(!response.ok)throw Error('HTTP '+response.status);
+ const data=await response.json();
+ const cards=[
+ ['Enregistrements',data.total_recordings],
+ ['Locuteurs distincts',data.distinct_speakers],
+ ['Durée collectée',secondsLabel(data.total_duration_s)],
+ ['En attente',data.pending_review],
+ ['Approuvés',data.approved],
+ ['Rejetés',data.rejected],
+ ['Durée approuvée',secondsLabel(data.approved_duration_s)]
+ ];
+ area.replaceChildren();
+ for(const [label,value] of cards){const card=document.createElement('div');card.className='stat';
+ const title=document.createElement('span');title.textContent=label;const number=document.createElement('strong');number.textContent=value;
+ card.append(title,number);area.append(card)}
+ $('validationLabel').textContent='Enregistrements approuvés : '+data.validation_percent.toFixed(1)+' % du total';
+ $('validationBar').style.width=data.validation_percent+'%';
+ $('statsMessage').textContent='';
+ }catch(e){$('statsMessage').textContent='Statistiques indisponibles : '+e.message}
+}
+$('refreshStats').onclick=loadStats;
+loadStats();
 </script></body></html>
