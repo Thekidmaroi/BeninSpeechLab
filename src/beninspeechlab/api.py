@@ -1,9 +1,11 @@
 import os
+import tempfile
+from fastapi import BackgroundTasks
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
-from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats
+from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats, build_asr_export
 
 app = FastAPI(title="BeninSpeechLab · Fon Speech Ingestion", version="0.1.0")
 
@@ -79,3 +81,25 @@ def recording_review(recording_id: str, payload: ReviewPayload, request: Request
 def stats(request: Request):
     local_only(request)
     return corpus_stats(Path(os.environ.get("BENINSPEECH_DATA", "./data")))
+
+
+@app.get("/v1/export/asr")
+def export_asr(request: Request, background_tasks: BackgroundTasks):
+    local_only(request)
+    # Create a temporary ZIP and delete it after FileResponse completes.
+    import os as _os
+    fd, name = tempfile.mkstemp(prefix="beninspeechlab_asr_", suffix=".zip")
+    _os.close(fd)
+    archive = Path(name)
+    try:
+        build_asr_export(Path(os.environ.get("BENINSPEECH_DATA", "./data")), archive)
+    except ValueError as exc:
+        archive.unlink(missing_ok=True)
+        raise HTTPException(422, str(exc)) from exc
+    except Exception:
+        archive.unlink(missing_ok=True)
+        raise
+    background_tasks.add_task(archive.unlink, missing_ok=True)
+    return FileResponse(archive, media_type="application/zip",
+                        filename="beninspeechlab_fon_asr.zip",
+                        background=background_tasks)
