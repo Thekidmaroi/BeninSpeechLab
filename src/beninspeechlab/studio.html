@@ -9,6 +9,9 @@ label{display:block;margin:16px 0 7px;font-weight:600}input[type=text],textarea,
 button{background:#ed735c;color:#131821;border:0;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer;margin:8px 8px 8px 0}
 button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;color:white}audio{width:100%;margin:12px 0}
 #message{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#aab9cd}
+#library article{border-top:1px solid #344960;padding:18px 0}#library article:first-child{border-top:0}
+#library textarea{margin-top:5px}#library select{padding:10px;border-radius:8px;background:#0b1423;color:white;border:1px solid #526681}
+#library .meta{font-size:.86rem;color:#aab9cd;overflow-wrap:anywhere}#library .feedback{font-size:.9rem}
 </style></head><body><main>
 <p class="muted">RESEARCH MVP · FON</p><h1>BeninSpeechLab Studio</h1>
 <p>Enregistre une phrase en fon, écoute-la et envoie-la à ton espace de collecte local.</p>
@@ -24,6 +27,10 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <button id="submit" disabled>Envoyer l'enregistrement</button>
 <p id="message" role="status" aria-live="polite"></p></section>
 <p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
+<section><h2>3. Bibliothèque et annotation</h2>
+<p>Écoute, transcris et valide les enregistrements conservés localement.</p>
+<button id="refresh" class="secondary">↻ Actualiser la bibliothèque</button>
+<div id="library" aria-live="polite">Chargement…</div></section>
 </main><script>
 const $=id=>document.getElementById(id);
 let stream=null,recorder=null,chunks=[],recording=null,objectURL=null;
@@ -40,5 +47,35 @@ $('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start
 $('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
 $('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
 $('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope','research_internal');if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
-try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false}};
+try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary()}};
+
+async function loadLibrary(){
+ const area=$('library');area.replaceChildren();const loading=document.createElement('p');loading.textContent='Chargement…';area.append(loading);
+ try{
+ const res=await fetch('/v1/recordings');if(!res.ok)throw Error('HTTP '+res.status);
+ const items=await res.json();area.replaceChildren();
+ if(!items.length){const p=document.createElement('p');p.textContent='Aucun enregistrement pour le moment.';area.append(p);return}
+ for(const item of items){
+ const article=document.createElement('article');
+ const head=document.createElement('strong');head.textContent=item.speaker_id+' · '+item.duration_s.toFixed(2)+' s';
+ const meta=document.createElement('p');meta.className='meta';meta.textContent=item.id+' · '+item.status+' · '+item.language;
+ const audio=document.createElement('audio');audio.controls=true;audio.preload='none';audio.src='/v1/recordings/'+encodeURIComponent(item.id)+'/audio';
+ const label=document.createElement('label');label.textContent='Transcription vérifiée';
+ const transcript=document.createElement('textarea');transcript.rows=2;transcript.value=item.transcript||'';transcript.maxLength=10000;
+ const select=document.createElement('select');
+ for(const [value,title] of [['pending_review','En attente'],['approved','Approuvé'],['rejected','Rejeté']]){const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option)}
+ select.value=item.status;
+ const save=document.createElement('button');save.textContent='Enregistrer la révision';
+ const feedback=document.createElement('p');feedback.className='feedback';feedback.setAttribute('role','status');
+ save.onclick=async()=>{save.disabled=true;feedback.textContent='Enregistrement…';
+ try{const res=await fetch('/v1/recordings/'+encodeURIComponent(item.id)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,status:select.value})});
+ const result=await res.json();if(!res.ok)throw Error(typeof result.detail==='string'?result.detail:JSON.stringify(result.detail));
+ feedback.textContent='Révision enregistrée : '+result.status;meta.textContent=item.id+' · '+result.status+' · '+item.language;
+ }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false}};
+ article.append(head,meta,audio,label,transcript,select,save,feedback);area.append(article);
+ }
+ }catch(e){area.textContent='Impossible de charger la bibliothèque : '+e.message}
+}
+$('refresh').onclick=loadLibrary;
+loadLibrary();
 </script></body></html>
