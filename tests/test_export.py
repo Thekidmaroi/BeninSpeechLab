@@ -1,3 +1,4 @@
+from conftest import login_admin
 import io
 import json
 from zipfile import ZipFile
@@ -20,6 +21,7 @@ def test_export_only_release_approved(tmp_path, monkeypatch):
     review_recording(tmp_path, released, "Mì do gbe", "approved")
     review_recording(tmp_path, internal, "Internal only", "approved")
     client = TestClient(app)
+    login_admin(client)
     response = client.get("/v1/export/asr")
     assert response.status_code == 200
     with ZipFile(io.BytesIO(response.content)) as archive:
@@ -38,7 +40,9 @@ def test_export_only_release_approved(tmp_path, monkeypatch):
 
 def test_export_empty_zip(tmp_path, monkeypatch):
     monkeypatch.setenv("BENINSPEECH_DATA", str(tmp_path))
-    response = TestClient(app).get("/v1/export/asr")
+    client = TestClient(app)
+    login_admin(client)
+    response = client.get("/v1/export/asr")
     assert response.status_code == 200
     with ZipFile(io.BytesIO(response.content)) as archive:
         assert archive.namelist() == ["manifest.jsonl"]
