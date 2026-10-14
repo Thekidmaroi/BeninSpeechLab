@@ -159,9 +159,9 @@ def corpus_stats(root: Path) -> dict:
             SELECT COUNT(*) AS total_recordings,
                    COUNT(DISTINCT speaker_id) AS distinct_speakers,
                    COALESCE(SUM(duration_s), 0) AS total_duration_s,
-                   SUM(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_review,
-                   SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
-                   SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END) AS rejected,
+                   COALESCE(SUM(CASE WHEN status='pending_review' THEN 1 ELSE 0 END), 0) AS pending_review,
+                   COALESCE(SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END), 0) AS approved,
+                   COALESCE(SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END), 0) AS rejected,
                    COALESCE(SUM(CASE WHEN status='approved' AND
                      transcript IS NOT NULL AND TRIM(transcript) != ''
                      THEN duration_s ELSE 0 END), 0) AS approved_duration_s
