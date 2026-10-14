@@ -44,7 +44,7 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <label><input id="consent" type="checkbox"> Je confirme disposer du consentement explicite du locuteur pour l'usage sélectionné ci-dessus, y compris la diffusion du jeu de données si cette option est choisie.</label>
 <button id="submit" disabled>Envoyer l'enregistrement</button>
 <p id="message" role="status" aria-live="polite"></p></section>
-<p class="muted">Tes enregistrements sont privés par défaut. La diffusion du jeu de données nécessite ton autorisation explicite et une validation humaine.</p><p><a href="/admin/login" style="color:#ed735c">Accès administration</a></p></main><script>const $=id=>document.getElementById(id);
+<p class="muted">Tes enregistrements sont privés par défaut. La diffusion du jeu de données nécessite ton autorisation explicite et une validation humaine.</p></main><script>const $=id=>document.getElementById(id);
 let stream=null,recorder=null,chunks=[],recording=null,objectURL=null;
 const show=(msg,error=false)=>{$('message').textContent=msg;$('message').style.color=error?'#ffaaa1':'#a4e5ca'};
 function setRecording(file){recording=file;if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);$('preview').src=objectURL;$('preview').hidden=false;$('fileInfo').textContent=file.name+' · '+Math.round(file.size/1024)+' Ko';$('submit').disabled=false}
