@@ -1,3 +1,4 @@
+from conftest import login_admin
 from fastapi.testclient import TestClient
 from beninspeechlab.api import app
 from beninspeechlab.core import corpus_stats, ingest, review_recording
@@ -6,7 +7,9 @@ from test_pipeline import wav_bytes
 
 def test_empty_dashboard(tmp_path, monkeypatch):
     monkeypatch.setenv("BENINSPEECH_DATA", str(tmp_path))
-    result = TestClient(app).get("/v1/stats")
+    client = TestClient(app)
+    login_admin(client)
+    result = client.get("/v1/stats")
     assert result.status_code == 200
     assert result.json() == {
         "total_recordings": 0, "distinct_speakers": 0,
@@ -32,4 +35,6 @@ def test_dashboard_after_reviews(tmp_path, monkeypatch):
     assert stats["rejected"] == 1
     assert stats["pending_review"] == 1
     assert stats["validation_percent"] == 33.3
-    assert TestClient(app).get("/v1/stats").json() == stats
+    client = TestClient(app)
+    login_admin(client)
+    assert client.get("/v1/stats").json() == stats
