@@ -20,67 +20,31 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 .progress div{height:100%;width:0;background:#ed735c;transition:width .3s}
 </style></head><body><main>
 <p class="muted">RESEARCH MVP · FON</p><h1>BeninSpeechLab Studio</h1>
-<p>Enregistre une phrase en fon, écoute-la et envoie-la à ton espace de collecte local.</p>
-<section><h2>1. Enregistrement</h2>
-<p>Microphone local ou import WAV PCM. Les données ne sont envoyées qu'après confirmation.</p>
-<button id="start">● Commencer</button><button id="stop" class="secondary" disabled>■ Arrêter</button>
-<label for="file">Ou importer un fichier WAV</label><input id="file" type="file" accept=".wav,audio/wav">
-<audio id="preview" controls hidden></audio><small id="fileInfo">Aucun fichier sélectionné</small></section>
-<section><h2>2. Métadonnées et consentement</h2>
-<label for="speaker">Identifiant du locuteur</label><input id="speaker" type="text" value="speaker_001" maxlength="100">
-<p class="muted">Profil linguistique facultatif du locuteur (pas de nom réel ni de date de naissance).</p>
-<label for="ageGroup">Tranche d'âge (facultatif, adultes)</label>
-<select id="ageGroup" style="width:100%;padding:12px;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px">
-<option value="">Non renseignée</option><option>18-24</option><option>25-34</option>
-<option>35-44</option><option>45-54</option><option>55-64</option><option>65+</option>
-</select>
-<label for="linguisticRegion">Région linguistique (facultatif)</label>
-<input id="linguisticRegion" type="text" maxlength="80" placeholder="Ex. Abomey">
-<label for="fonVariant">Variante du fon (facultatif)</label>
-<input id="fonVariant" type="text" maxlength="80" placeholder="Variante déclarée par le locuteur">
-<label for="transcript">Transcription (facultatif)</label><textarea id="transcript" rows="3" placeholder="Écris exactement les mots prononcés en fon"></textarea>
-<label for="licenseScope">Autorisation d'utilisation</label>
-<select id="licenseScope" style="width:100%;padding:12px;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px">
-<option value="research_internal">Recherche interne uniquement (par défaut)</option>
-<option value="dataset_release_approved">Diffusion du jeu de données explicitement autorisée</option>
-</select>
-<label><input id="consent" type="checkbox"> Je confirme disposer du consentement explicite du locuteur pour l'usage sélectionné ci-dessus, y compris la diffusion du jeu de données si cette option est choisie.</label>
-<button id="submit" disabled>Envoyer l'enregistrement</button>
-<p id="message" role="status" aria-live="polite"></p></section>
+<p>Administration privée : annotations, statistiques et exports.</p><button id="logout" class="secondary">Se déconnecter</button><p><a href="/contribute" style="color:#ed735c">Voir l’espace locuteur</a></p>
 <p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
-<section><h2>3. Tableau de bord du corpus</h2>
+<section><h2>1. Tableau de bord du corpus</h2>
 <p>Indicateurs calculés à partir de la base SQLite locale.</p>
 <button id="refreshStats" class="secondary">↻ Actualiser les statistiques</button>
 <div class="stats-grid" id="statsGrid" aria-live="polite"></div>
 <p id="validationLabel" class="muted"></p><div class="progress" aria-label="Progression des enregistrements approuvés"><div id="validationBar"></div></div>
 <p id="statsMessage" role="status"></p></section>
-<section><h2>4. Bibliothèque et annotation</h2>
+<section><h2>2. Bibliothèque et annotation</h2>
 <p>Écoute, transcris et valide les enregistrements conservés localement.</p>
 <button id="refresh" class="secondary">↻ Actualiser la bibliothèque</button>
 <div id="library" aria-live="polite">Chargement…</div></section>
-<section><h2>5. Export du corpus ASR</h2>
+<section><h2>3. Export du corpus ASR</h2>
 <p>Le ZIP contient uniquement les WAV approuvés, transcrits et autorisés pour la diffusion du jeu de données. Les enregistrements réservés à la recherche interne ne sont pas inclus.</p>
 <button id="exportAsr">↓ Exporter le corpus ASR (.zip)</button>
 <p id="exportMessage" role="status"></p>
 <small>Avant tout partage externe, vérifie les consentements et les droits d'utilisation. Ce prototype reste local.</small>
 </section></main><script>
 const $=id=>document.getElementById(id);
-let stream=null,recorder=null,chunks=[],recording=null,objectURL=null;
-const show=(msg,error=false)=>{$('message').textContent=msg;$('message').style.color=error?'#ffaaa1':'#a4e5ca'};
-function setRecording(file){recording=file;if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);$('preview').src=objectURL;$('preview').hidden=false;$('fileInfo').textContent=file.name+' · '+Math.round(file.size/1024)+' Ko';$('submit').disabled=false}
-function wavFromBuffer(buffer){const n=buffer.length,rate=buffer.sampleRate,channels=buffer.numberOfChannels;const out=new ArrayBuffer(44+n*2),view=new DataView(out);let p=0;
-function str(s){for(const c of s)view.setUint8(p++,c.charCodeAt(0))}
-function u32(x){view.setUint32(p,x,true);p+=4}function u16(x){view.setUint16(p,x,true);p+=2}
-str('RIFF');u32(36+n*2);str('WAVEfmt ');u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);str('data');u32(n*2);
-for(let i=0;i<n;i++){let s=0;for(let c=0;c<channels;c++)s+=buffer.getChannelData(c)[i]/channels;s=Math.max(-1,Math.min(1,s));view.setInt16(p,s<0?s*32768:s*32767,true);p+=2}
-return new Blob([out],{type:'audio/wav'})}
-$('start').onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];recorder=new MediaRecorder(stream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{try{const blob=new Blob(chunks,{type:recorder.mimeType});const ctx=new AudioContext();const data=await blob.arrayBuffer();const decoded=await ctx.decodeAudioData(data);const wav=wavFromBuffer(decoded);await ctx.close();setRecording(new File([wav],'fon_recording_'+Date.now()+'.wav',{type:'audio/wav'}));show('Enregistrement prêt. Réécoute-le avant l’envoi.')}catch(e){show('Conversion impossible : '+e.message,true)}finally{stream?.getTracks().forEach(t=>t.stop());stream=null}};recorder.start();$('start').disabled=true;$('stop').disabled=false;show('Enregistrement en cours…')}catch(e){show('Microphone indisponible : '+e.message,true)}};
-$('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
-$('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
-$('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
-$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope',$('licenseScope').value);if($('ageGroup').value)form.append('age_group',$('ageGroup').value);if($('linguisticRegion').value.trim())form.append('linguistic_region',$('linguisticRegion').value.trim());if($('fonVariant').value.trim())form.append('fon_variant',$('fonVariant').value.trim());if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
-try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary();loadStats()}};
-
+let csrfToken='';
+fetch('/v1/admin/session').then(r=>{if(!r.ok)throw Error('Session expirée');return r.json()}).then(data=>{csrfToken=data.csrf_token}).catch(()=>{location.href='/admin/login'});
+$('logout').onclick=async()=>{
+ await fetch('/v1/admin/logout',{method:'POST',headers:{'X-CSRF-Token':csrfToken}});
+ location.href='/admin/login';
+};
 async function loadLibrary(){
  const area=$('library');area.replaceChildren();const loading=document.createElement('p');loading.textContent='Chargement…';area.append(loading);
  try{
@@ -100,7 +64,7 @@ async function loadLibrary(){
  const save=document.createElement('button');save.textContent='Enregistrer la révision';
  const feedback=document.createElement('p');feedback.className='feedback';feedback.setAttribute('role','status');
  save.onclick=async()=>{save.disabled=true;feedback.textContent='Enregistrement…';
- try{const res=await fetch('/v1/recordings/'+encodeURIComponent(item.id)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:transcript.value,status:select.value})});
+ try{const res=await fetch('/v1/recordings/'+encodeURIComponent(item.id)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({transcript:transcript.value,status:select.value})});
  const result=await res.json();if(!res.ok)throw Error(typeof result.detail==='string'?result.detail:JSON.stringify(result.detail));
  feedback.textContent='Révision enregistrée : '+result.status;meta.textContent=item.id+' · '+result.status+' · '+item.language;
  }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false;loadStats()}};
