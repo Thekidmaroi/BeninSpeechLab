@@ -15,3 +15,6 @@ beninspeechlab = "beninspeechlab.cli:main"
 where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.setuptools.package-data]
+beninspeechlab = ["studio.html"]
