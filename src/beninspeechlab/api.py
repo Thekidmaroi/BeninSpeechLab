@@ -1,9 +1,14 @@
 import os
 from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from .core import ingest, MAX_BYTES
 
 app = FastAPI(title="BeninSpeechLab · Fon Speech Ingestion", version="0.1.0")
+
+@app.get("/studio", response_class=HTMLResponse, include_in_schema=False)
+def studio():
+    return (Path(__file__).parent / "studio.html").read_text(encoding="utf-8")
 
 @app.get("/health")
 def health():
