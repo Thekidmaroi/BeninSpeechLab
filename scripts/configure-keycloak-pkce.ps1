@@ -12,9 +12,7 @@ $cli = "/opt/keycloak/bin/kcadm.sh"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("bsl-pkce-" + [guid]::NewGuid().ToString("N") + ".json")
 $remote = "/tmp/bsl-pkce-" + [guid]::NewGuid().ToString("N") + ".json"
 function Invoke-Kc([string[]]$ArgsList) {
-    $out = & docker exec $Container $cli @ArgsList 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Keycloak CLI failed: $($out | Out-String)" }
-    return ($out | Out-String)
+    # Windows PowerShell 5.1 turns native stderr into a terminating NativeCommandError\n    # under Stop. Capture it as output and check the native exit code ourselves.\n    $previousPreference = $ErrorActionPreference\n    $ErrorActionPreference = "Continue"\n    try {\n        $out = & docker exec $Container $cli @ArgsList 2>&1\n        $code = $LASTEXITCODE\n    } finally {\n        $ErrorActionPreference = $previousPreference\n    }\n    if ($code -ne 0) { throw "Keycloak CLI exited $code: $($out | Out-String)" }\n    return ($out | Out-String)
 }
 try {
     & docker inspect $Container --format '{{.State.Running}}' | Out-Null
