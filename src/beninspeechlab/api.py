@@ -25,13 +25,17 @@ async def create_recording(
     consent_version: str = Form("v1"),
     license_scope: str = Form("research_internal"),
     transcript: str | None = Form(None),
+    age_group: str | None = Form(None),
+    linguistic_region: str | None = Form(None),
+    fon_variant: str | None = Form(None),
 ):
     if not (file.filename or "").lower().endswith(".wav"):
         raise HTTPException(422, "Only PCM WAV is supported in the MVP")
     content = await file.read(MAX_BYTES + 1)
     try:
         return ingest(Path(os.environ.get("BENINSPEECH_DATA", "./data")), content,
-                      speaker_id, consent, consent_version, license_scope, transcript)
+                      speaker_id, consent, consent_version, license_scope, transcript,
+                      age_group, linguistic_region, fon_variant)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
