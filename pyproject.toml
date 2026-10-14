@@ -17,4 +17,4 @@ where = ["src"]
 pythonpath = ["src"]
 
 [tool.setuptools.package-data]
-beninspeechlab = ["studio.html"]
+beninspeechlab = ["studio.html", "contribute.html", "login.html"]
