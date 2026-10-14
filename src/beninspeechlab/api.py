@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
-from .security import COOKIE, SESSION_SECONDS, check_password, configured, csrf_token, issue_session, require_admin, same_origin, secure_transport
+from .security import COOKIE, SESSION_SECONDS, check_password, configured, current_role, csrf_token, issue_session, require_admin, same_origin, secure_transport
 from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats, build_asr_export
 
 app = FastAPI(title="BeninSpeechLab · Fon Speech Ingestion", version="0.1.0")
@@ -70,7 +70,7 @@ def admin_login(payload: LoginPayload, request: Request):
 
 @app.get("/v1/admin/session")
 def admin_session(request: Request):
-    return {"csrf_token": csrf_token(request)}
+    return {"csrf_token": csrf_token(request), "role": current_role(request)}
 
 
 @app.post("/v1/admin/logout")
@@ -119,13 +119,13 @@ class ReviewPayload(BaseModel):
 
 @app.get("/v1/recordings")
 def recordings(request: Request):
-    require_admin(request)
+    require_admin(request, permission="read_recordings")
     return list_recordings(Path(os.environ.get("BENINSPEECH_DATA", "./data")))
 
 
 @app.get("/v1/recordings/{recording_id}/audio")
 def recording_audio(recording_id: str, request: Request):
-    require_admin(request)
+    require_admin(request, permission="read_recordings")
     path = get_recording_audio(Path(os.environ.get("BENINSPEECH_DATA", "./data")), recording_id)
     if path is None:
         raise HTTPException(404, "Recording not found")
@@ -134,7 +134,9 @@ def recording_audio(recording_id: str, request: Request):
 
 @app.patch("/v1/recordings/{recording_id}/review")
 def recording_review(recording_id: str, payload: ReviewPayload, request: Request):
-    require_admin(request, mutation=True)
+    require_admin(request, mutation=True, permission="review_recordings")
+    if payload.status == "approved":
+        require_admin(request, permission="approve_recordings")
     try:
         result = review_recording(
             Path(os.environ.get("BENINSPEECH_DATA", "./data")),
@@ -149,13 +151,13 @@ def recording_review(recording_id: str, payload: ReviewPayload, request: Request
 
 @app.get("/v1/stats")
 def stats(request: Request):
-    require_admin(request)
+    require_admin(request, permission="read_stats")
     return corpus_stats(Path(os.environ.get("BENINSPEECH_DATA", "./data")))
 
 
 @app.get("/v1/export/asr")
 def export_asr(request: Request, background_tasks: BackgroundTasks):
-    require_admin(request)
+    require_admin(request, permission="export_corpus")
     # Create a temporary ZIP and delete it after FileResponse completes.
     import os as _os
     fd, name = tempfile.mkstemp(prefix="beninspeechlab_asr_", suffix=".zip")
