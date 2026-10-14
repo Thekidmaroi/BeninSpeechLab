@@ -180,3 +180,50 @@ def corpus_stats(root: Path) -> dict:
         }
     finally:
         conn.close()
+
+
+def build_asr_export(root: Path, output: Path) -> int:
+    """ZIP approved, transcribed, release-authorized WAVs only.
+
+    The manifest paths are relative to the ZIP root. This is not a public
+    publishing operation; operators must still review their consent records.
+    """
+    from zipfile import ZIP_DEFLATED, ZipFile
+
+    conn = init_db(root)
+    try:
+        rows = conn.execute(
+            """SELECT id, relative_path, speaker_id, language, duration_s,
+                      sample_rate, transcript, license_scope
+               FROM recordings
+               WHERE status='approved'
+                 AND license_scope='dataset_release_approved'
+                 AND transcript IS NOT NULL AND TRIM(transcript) != ''
+               ORDER BY id"""
+        ).fetchall()
+    finally:
+        conn.close()
+
+    # Validate all paths before writing the archive; never trust paths from DB.
+    files = []
+    private_dir = (root / "private_audio").resolve()
+    for uid, relative, speaker, language, duration, rate, transcript, license_scope in rows:
+        source = (root / relative).resolve()
+        if not source.is_relative_to(private_dir) or not source.is_file():
+            raise ValueError(f"Missing or unsafe audio for recording {uid}")
+        files.append((uid, source, speaker, language, duration, rate, transcript, license_scope))
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with ZipFile(output, "w", compression=ZIP_DEFLATED) as archive:
+        manifest_lines = []
+        for uid, source, speaker, language, duration, rate, transcript, scope in files:
+            audio_name = f"audio/{uid}.wav"
+            archive.write(source, audio_name)
+            manifest_lines.append(json.dumps({
+                "id": uid, "audio": audio_name, "speaker_id": speaker,
+                "language": language, "duration_s": duration,
+                "sample_rate": rate, "text": transcript,
+                "license_scope": scope,
+            }, ensure_ascii=False))
+        archive.writestr("manifest.jsonl", "\n".join(manifest_lines) + ("\n" if manifest_lines else ""))
+    return len(files)
