@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BeninSpeechLab Studio</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color:#e9f1fa;background:#0b1423}*{box-sizing:border-box}body{margin:0}
+main{max-width:820px;margin:42px auto;padding:0 20px}h1{font-size:2.3rem;margin-bottom:4px}p,.muted{color:#aab9cd}
+section{background:#15243a;border:1px solid #30435c;border-radius:18px;padding:24px;margin:20px 0}
+label{display:block;margin:16px 0 7px;font-weight:600}input[type=text],textarea,input[type=file]{width:100%;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px;padding:12px}
+button{background:#ed735c;color:#131821;border:0;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer;margin:8px 8px 8px 0}
+button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;color:white}audio{width:100%;margin:12px 0}
+#message{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#aab9cd}
+</style></head><body><main>
+<p class="muted">RESEARCH MVP · FON</p><h1>BeninSpeechLab Studio</h1>
+<p>Enregistre une phrase en fon, écoute-la et envoie-la à ton espace de collecte local.</p>
+<section><h2>1. Enregistrement</h2>
+<p>Microphone local ou import WAV PCM. Les données ne sont envoyées qu'après confirmation.</p>
+<button id="start">● Commencer</button><button id="stop" class="secondary" disabled>■ Arrêter</button>
+<label for="file">Ou importer un fichier WAV</label><input id="file" type="file" accept=".wav,audio/wav">
+<audio id="preview" controls hidden></audio><small id="fileInfo">Aucun fichier sélectionné</small></section>
+<section><h2>2. Métadonnées et consentement</h2>
+<label for="speaker">Identifiant du locuteur</label><input id="speaker" type="text" value="speaker_001" maxlength="100">
+<label for="transcript">Transcription (facultatif)</label><textarea id="transcript" rows="3" placeholder="Écris exactement les mots prononcés en fon"></textarea>
+<label><input id="consent" type="checkbox"> Je confirme être le locuteur ou disposer de son consentement explicite pour ce dépôt de recherche interne.</label>
+<button id="submit" disabled>Envoyer l'enregistrement</button>
+<p id="message" role="status" aria-live="polite"></p></section>
+<p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
+</main><script>
+const $=id=>document.getElementById(id);
+let stream=null,recorder=null,chunks=[],recording=null,objectURL=null;
+const show=(msg,error=false)=>{$('message').textContent=msg;$('message').style.color=error?'#ffaaa1':'#a4e5ca'};
+function setRecording(file){recording=file;if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);$('preview').src=objectURL;$('preview').hidden=false;$('fileInfo').textContent=file.name+' · '+Math.round(file.size/1024)+' Ko';$('submit').disabled=false}
+function wavFromBuffer(buffer){const n=buffer.length,rate=buffer.sampleRate,channels=buffer.numberOfChannels;const out=new ArrayBuffer(44+n*2),view=new DataView(out);let p=0;
+function str(s){for(const c of s)view.setUint8(p++,c.charCodeAt(0))}
+function u32(x){view.setUint32(p,x,true);p+=4}function u16(x){view.setUint16(p,x,true);p+=2}
+str('RIFF');u32(36+n*2);str('WAVEfmt ');u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);str('data');u32(n*2);
+for(let i=0;i<n;i++){let s=0;for(let c=0;c<channels;c++)s+=buffer.getChannelData(c)[i]/channels;s=Math.max(-1,Math.min(1,s));view.setInt16(p,s<0?s*32768:s*32767,true);p+=2}
+return new Blob([out],{type:'audio/wav'})}
+$('start').onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({audio:true});chunks=[];recorder=new MediaRecorder(stream);recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=async()=>{try{const blob=new Blob(chunks,{type:recorder.mimeType});const ctx=new AudioContext();const data=await blob.arrayBuffer();const decoded=await ctx.decodeAudioData(data);const wav=wavFromBuffer(decoded);await ctx.close();setRecording(new File([wav],'fon_recording_'+Date.now()+'.wav',{type:'audio/wav'}));show('Enregistrement prêt. Réécoute-le avant l’envoi.')}catch(e){show('Conversion impossible : '+e.message,true)}finally{stream?.getTracks().forEach(t=>t.stop());stream=null}};recorder.start();$('start').disabled=true;$('stop').disabled=false;show('Enregistrement en cours…')}catch(e){show('Microphone indisponible : '+e.message,true)}};
+$('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
+$('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
+$('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
+$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope','research_internal');if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
+try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false}};
+</script></body></html>
