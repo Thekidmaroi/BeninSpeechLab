@@ -28,6 +28,16 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <audio id="preview" controls hidden></audio><small id="fileInfo">Aucun fichier sélectionné</small></section>
 <section><h2>2. Métadonnées et consentement</h2>
 <label for="speaker">Identifiant du locuteur</label><input id="speaker" type="text" value="speaker_001" maxlength="100">
+<p class="muted">Profil linguistique facultatif du locuteur (pas de nom réel ni de date de naissance).</p>
+<label for="ageGroup">Tranche d'âge (facultatif, adultes)</label>
+<select id="ageGroup" style="width:100%;padding:12px;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px">
+<option value="">Non renseignée</option><option>18-24</option><option>25-34</option>
+<option>35-44</option><option>45-54</option><option>55-64</option><option>65+</option>
+</select>
+<label for="linguisticRegion">Région linguistique (facultatif)</label>
+<input id="linguisticRegion" type="text" maxlength="80" placeholder="Ex. Abomey">
+<label for="fonVariant">Variante du fon (facultatif)</label>
+<input id="fonVariant" type="text" maxlength="80" placeholder="Variante déclarée par le locuteur">
 <label for="transcript">Transcription (facultatif)</label><textarea id="transcript" rows="3" placeholder="Écris exactement les mots prononcés en fon"></textarea>
 <label for="licenseScope">Autorisation d'utilisation</label>
 <select id="licenseScope" style="width:100%;padding:12px;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px">
@@ -68,7 +78,7 @@ $('start').onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedi
 $('stop').onclick=()=>{if(recorder?.state==='recording')recorder.stop();$('start').disabled=false;$('stop').disabled=true};
 $('file').onchange=e=>{const f=e.target.files[0];if(f){setRecording(f);show('Fichier chargé.')}}; 
 $('submit').onclick=async()=>{if(!recording)return show('Choisis un fichier ou enregistre ta voix.',true);if(!$('consent').checked)return show('Consentement explicite requis.',true);if(!$('speaker').value.trim())return show('Identifiant du locuteur requis.',true);
-$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope',$('licenseScope').value);if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
+$('submit').disabled=true;show('Envoi en cours…');const form=new FormData();form.append('file',recording);form.append('speaker_id',$('speaker').value.trim());form.append('consent','true');form.append('consent_version','v1');form.append('license_scope',$('licenseScope').value);if($('ageGroup').value)form.append('age_group',$('ageGroup').value);if($('linguisticRegion').value.trim())form.append('linguistic_region',$('linguisticRegion').value.trim());if($('fonVariant').value.trim())form.append('fon_variant',$('fonVariant').value.trim());if($('transcript').value.trim())form.append('transcript',$('transcript').value.trim());
 try{const res=await fetch('/v1/recordings',{method:'POST',body:form});const data=await res.json();if(!res.ok)throw Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));show('Enregistrement accepté !\nID : '+data.id+'\nStatut : '+data.status+'\nDurée : '+data.duration_s+' s'+(data.duplicate?'\nDoublon détecté':''))}catch(e){show('Échec : '+e.message,true)}finally{$('submit').disabled=false;loadLibrary();loadStats()}};
 
 async function loadLibrary(){
@@ -80,7 +90,7 @@ async function loadLibrary(){
  for(const item of items){
  const article=document.createElement('article');
  const head=document.createElement('strong');head.textContent=item.speaker_id+' · '+item.duration_s.toFixed(2)+' s';
- const meta=document.createElement('p');meta.className='meta';meta.textContent=item.id+' · '+item.status+' · '+item.language;
+ const meta=document.createElement('p');meta.className='meta';meta.textContent=item.id+' · '+item.status+' · '+item.language+[item.age_group,item.linguistic_region,item.fon_variant].filter(Boolean).map(x=>' · '+x).join('');
  const audio=document.createElement('audio');audio.controls=true;audio.preload='none';audio.src='/v1/recordings/'+encodeURIComponent(item.id)+'/audio';
  const label=document.createElement('label');label.textContent='Transcription vérifiée';
  const transcript=document.createElement('textarea');transcript.rows=2;transcript.value=item.transcript||'';transcript.maxLength=10000;
