@@ -1,3 +1,4 @@
+from conftest import login_admin
 import sqlite3
 
 import pytest
@@ -37,7 +38,9 @@ def test_speaker_profile_saved_and_listed(tmp_path, monkeypatch):
     assert item["age_group"] == "25-34"
     assert item["linguistic_region"] == "Abomey"
     assert item["fon_variant"] == "Fon déclaré"
-    response = TestClient(app).get("/v1/recordings")
+    client = TestClient(app)
+    login_admin(client)
+    response = client.get("/v1/recordings")
     assert response.status_code == 200
     assert response.json()[0]["age_group"] == "25-34"
 
