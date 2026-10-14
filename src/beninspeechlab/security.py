@@ -16,6 +16,15 @@ from fastapi import HTTPException, Request
 
 COOKIE = "bsl_admin"
 SESSION_SECONDS = 8 * 3600
+ROLES = {"super_admin", "manager", "annotator"}
+PERMISSIONS = {
+    "read_stats": {"super_admin", "manager"},
+    "read_recordings": {"super_admin", "manager", "annotator"},
+    "review_recordings": {"super_admin", "manager", "annotator"},
+    "approve_recordings": {"super_admin", "manager"},
+    "export_corpus": {"super_admin"},
+}
+
 _attempts = defaultdict(list)
 _attempt_lock = threading.Lock()
 
@@ -53,16 +62,20 @@ def _signature(payload: str):
     return hmac.new(_secret(), payload.encode(), hashlib.sha256).hexdigest()
 
 
-def issue_session():
-    payload = f"{int(time.time()) + SESSION_SECONDS}.{secrets.token_urlsafe(24)}"
+def issue_session(role="super_admin"):
+    if role not in ROLES:
+        raise ValueError("Unknown role")
+    payload = f"{int(time.time()) + SESSION_SECONDS}.{role}.{secrets.token_urlsafe(24)}"
     return payload + "." + _signature(payload)
 
 
 def _session_payload(request: Request):
     token = request.cookies.get(COOKIE, "")
     try:
-        expires, nonce, signature = token.split(".", 2)
-        payload = expires + "." + nonce
+        expires, role, nonce, signature = token.split(".", 3)
+        if role not in ROLES:
+            return None
+        payload = expires + "." + role + "." + nonce
         if int(expires) < time.time() or not hmac.compare_digest(signature, _signature(payload)):
             return None
         return payload
@@ -70,11 +83,14 @@ def _session_payload(request: Request):
         return None
 
 
-def require_admin(request: Request, *, mutation=False):
+def require_admin(request: Request, *, mutation=False, permission=None):
     secure_transport(request)
     payload = _session_payload(request)
     if not payload:
         raise HTTPException(401, "Administrator login required")
+    role = payload.split(".")[1]
+    if permission and role not in PERMISSIONS.get(permission, set()):
+        raise HTTPException(403, "Insufficient privileges")
     if mutation:
         same_origin(request)
         supplied = request.headers.get("x-csrf-token", "")
@@ -108,3 +124,7 @@ def check_password(password: str, client_key: str):
         raise HTTPException(401, "Invalid credentials")
     with _attempt_lock:
         _attempts.pop(client_key, None)
+
+
+def current_role(request: Request):
+    return require_admin(request).split(".")[1]
