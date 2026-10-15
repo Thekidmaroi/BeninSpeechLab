@@ -39,7 +39,7 @@ def contribute():
 @app.get("/admin/login", response_class=HTMLResponse, include_in_schema=False)
 def admin_login_page():
     page = (Path(__file__).parent / "login.html").read_text(encoding="utf-8")
-    return page.replace("<!-- OIDC_LOGIN -->", '<p><a href="/auth/login">Se connecter avec Keycloak</a></p>' if oidc_enabled() else "")
+    return page.replace("<!-- OIDC_LOGIN -->", '<a class="primary" href="/auth/login">Se connecter avec Keycloak</a>' if oidc_enabled() else "")
 
 
 @app.get("/auth/login", include_in_schema=False)
