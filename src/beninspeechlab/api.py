@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from .security import COOKIE, SESSION_SECONDS, check_password, configured, current_role, csrf_token, issue_session, require_admin, same_origin, secure_transport
+from .oidc import begin as oidc_begin, callback as oidc_callback, enabled as oidc_enabled
 from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats, build_asr_export
 
 app = FastAPI(title="BeninSpeechLab · Fon Speech Ingestion", version="0.1.0")
@@ -37,7 +38,18 @@ def contribute():
 
 @app.get("/admin/login", response_class=HTMLResponse, include_in_schema=False)
 def admin_login_page():
-    return (Path(__file__).parent / "login.html").read_text(encoding="utf-8")
+    page = (Path(__file__).parent / "login.html").read_text(encoding="utf-8")
+    return page.replace("<!-- OIDC_LOGIN -->", '<p><a href="/auth/login">Se connecter avec Keycloak</a></p>' if oidc_enabled() else "")
+
+
+@app.get("/auth/login", include_in_schema=False)
+def auth_login(request: Request):
+    return oidc_begin(request)
+
+
+@app.get("/auth/callback", include_in_schema=False)
+def auth_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    return oidc_callback(request, code, state, error)
 
 
 @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
