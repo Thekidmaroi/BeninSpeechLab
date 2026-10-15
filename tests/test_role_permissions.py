@@ -71,3 +71,19 @@ def test_annotator_cannot_approve_even_with_valid_csrf():
             headers={"x-csrf-token": csrf},
         )
         assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "role,expected",
+    [
+        ("super_admin", {"read_stats", "read_recordings", "review_recordings", "approve_recordings", "export_corpus"}),
+        ("manager", {"read_stats", "read_recordings", "review_recordings", "approve_recordings"}),
+        ("annotator", {"read_recordings", "review_recordings"}),
+    ],
+)
+def test_session_exposes_effective_permissions(role, expected):
+    with TestClient(app) as client:
+        client.cookies.set(COOKIE, issue_session(role))
+        response = client.get("/v1/admin/session")
+        assert response.status_code == 200
+        assert set(response.json()["permissions"]) == expected
