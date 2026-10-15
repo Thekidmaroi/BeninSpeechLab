@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
-from .security import COOKIE, SESSION_SECONDS, check_password, configured, current_role, csrf_token, issue_session, require_admin, same_origin, secure_transport
+from .security import COOKIE, SESSION_SECONDS, PERMISSIONS, check_password, configured, current_role, csrf_token, issue_session, require_admin, same_origin, secure_transport
 from .oidc import begin as oidc_begin, callback as oidc_callback, enabled as oidc_enabled
 from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats, build_asr_export
 
@@ -82,7 +82,9 @@ def admin_login(payload: LoginPayload, request: Request):
 
 @app.get("/v1/admin/session")
 def admin_session(request: Request):
-    return {"csrf_token": csrf_token(request), "role": current_role(request)}
+    role = current_role(request)
+    return {"csrf_token": csrf_token(request), "role": role,
+            "permissions": sorted(name for name, roles in PERMISSIONS.items() if role in roles)}
 
 
 @app.post("/v1/admin/logout")
