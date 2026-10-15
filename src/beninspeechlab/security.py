@@ -36,7 +36,7 @@ def configured():
 
 
 def _secret():
-    if not configured():
+    if len(os.environ.get("BENINSPEECH_SESSION_SECRET", "")) < 32:
         raise HTTPException(503, "Admin authentication is not configured")
     return os.environ["BENINSPEECH_SESSION_SECRET"].encode("utf-8")
 
