@@ -4,7 +4,7 @@
 <style>
 :root{font-family:system-ui,Arial,sans-serif;color:#e9f1fa;background:#0b1423}*{box-sizing:border-box}body{margin:0}
 main{max-width:820px;margin:42px auto;padding:0 20px}h1{font-size:2.3rem;margin-bottom:4px}p,.muted{color:#aab9cd}
-section{background:#15243a;border:1px solid #30435c;border-radius:18px;padding:24px;margin:20px 0}
+[hidden]{display:none!important}section{background:#15243a;border:1px solid #30435c;border-radius:18px;padding:24px;margin:20px 0}
 label{display:block;margin:16px 0 7px;font-weight:600}input[type=text],textarea,input[type=file]{width:100%;background:#0b1423;color:white;border:1px solid #526681;border-radius:9px;padding:12px}
 button{background:#ed735c;color:#131821;border:0;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer;margin:8px 8px 8px 0}
 button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;color:white}audio{width:100%;margin:12px 0}
@@ -20,9 +20,9 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 .progress div{height:100%;width:0;background:#ed735c;transition:width .3s}
 </style></head><body><main>
 <p class="muted">RESEARCH MVP · FON</p><h1>BeninSpeechLab Studio</h1>
-<p>Administration privée : annotations, statistiques et exports.</p><button id="logout" class="secondary">Se déconnecter</button><p><a href="/contribute" style="color:#ed735c">Voir l’espace locuteur</a></p>
+<p>Administration privée : annotations, statistiques et exports.</p><p id="roleLabel" class="muted" aria-live="polite">Vérification des permissions…</p><button id="logout" class="secondary">Se déconnecter</button><p><a href="/contribute" style="color:#ed735c">Voir l’espace locuteur</a></p>
 <p class="muted">Prototype local uniquement : ne pas exposer ce service sur Internet sans authentification ni contrôle d'accès.</p>
-<section><h2>1. Tableau de bord du corpus</h2>
+<section id="statsSection" hidden><h2>1. Tableau de bord du corpus</h2>
 <p>Indicateurs calculés à partir de la base SQLite locale.</p>
 <button id="refreshStats" class="secondary">↻ Actualiser les statistiques</button>
 <div class="stats-grid" id="statsGrid" aria-live="polite"></div>
@@ -32,7 +32,7 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <p>Écoute, transcris et valide les enregistrements conservés localement.</p>
 <button id="refresh" class="secondary">↻ Actualiser la bibliothèque</button>
 <div id="library" aria-live="polite">Chargement…</div></section>
-<section><h2>3. Export du corpus ASR</h2>
+<section id="exportSection" hidden><h2>3. Export du corpus ASR</h2>
 <p>Le ZIP contient uniquement les WAV approuvés, transcrits et autorisés pour la diffusion du jeu de données. Les enregistrements réservés à la recherche interne ne sont pas inclus.</p>
 <button id="exportAsr">↓ Exporter le corpus ASR (.zip)</button>
 <p id="exportMessage" role="status"></p>
@@ -40,7 +40,20 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 </section></main><script>
 const $=id=>document.getElementById(id);
 let csrfToken='';
-fetch('/v1/admin/session').then(r=>{if(!r.ok)throw Error('Session expirée');return r.json()}).then(data=>{csrfToken=data.csrf_token}).catch(()=>{location.href='/admin/login'});
+let permissions=new Set();
+let role='';
+const can=name=>permissions.has(name);
+fetch('/v1/admin/session').then(r=>{if(!r.ok)throw Error('Session expirée');return r.json()}).then(data=>{
+ csrfToken=data.csrf_token;
+ role=data.role;
+ permissions=new Set(data.permissions||[]);
+ const names={super_admin:'Super administrateur',manager:'Manager',annotator:'Annotateur'};
+ $('roleLabel').textContent='Rôle : '+(names[role]||role);
+ $('statsSection').hidden=!can('read_stats');
+ $('exportSection').hidden=!can('export_corpus');
+ if(can('read_recordings'))loadLibrary();
+ if(can('read_stats'))loadStats();
+}).catch(()=>{location.href='/admin/login'});
 $('logout').onclick=async()=>{
  await fetch('/v1/admin/logout',{method:'POST',headers:{'X-CSRF-Token':csrfToken}});
  location.href='/admin/login';
@@ -59,21 +72,29 @@ async function loadLibrary(){
  const label=document.createElement('label');label.textContent='Transcription vérifiée';
  const transcript=document.createElement('textarea');transcript.rows=2;transcript.value=item.transcript||'';transcript.maxLength=10000;
  const select=document.createElement('select');
- for(const [value,title] of [['pending_review','En attente'],['approved','Approuvé'],['rejected','Rejeté']]){const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option)}
+ for(const [value,title] of [['pending_review','En attente'],['approved','Approuvé'],['rejected','Rejeté']]){
+ if(value==='approved'&&!can('approve_recordings')&&item.status!=='approved')continue;
+ const option=document.createElement('option');option.value=value;option.textContent=title;select.append(option)
+ }
  select.value=item.status;
+ if(!can('approve_recordings')&&item.status==='approved'){
+   const approved=select.querySelector('option[value="approved"]');
+   if(approved)approved.disabled=true;
+ }
  const save=document.createElement('button');save.textContent='Enregistrer la révision';
  const feedback=document.createElement('p');feedback.className='feedback';feedback.setAttribute('role','status');
- save.onclick=async()=>{save.disabled=true;feedback.textContent='Enregistrement…';
+ save.onclick=async()=>{
+ if(select.value==='approved'&&!can('approve_recordings')){feedback.textContent='Approbation réservée aux managers et administrateurs.';return}
+ save.disabled=true;feedback.textContent='Enregistrement…';
  try{const res=await fetch('/v1/recordings/'+encodeURIComponent(item.id)+'/review',{method:'PATCH',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify({transcript:transcript.value,status:select.value})});
  const result=await res.json();if(!res.ok)throw Error(typeof result.detail==='string'?result.detail:JSON.stringify(result.detail));
  feedback.textContent='Révision enregistrée : '+result.status;meta.textContent=item.id+' · '+result.status+' · '+item.language;
- }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false;loadStats()}};
+ }catch(e){feedback.textContent='Erreur : '+e.message}finally{save.disabled=false;if(can('read_stats'))loadStats()}};
  article.append(head,meta,audio,label,transcript,select,save,feedback);area.append(article);
  }
  }catch(e){area.textContent='Impossible de charger la bibliothèque : '+e.message}
 }
-$('refresh').onclick=loadLibrary;
-loadLibrary();
+$('refresh').onclick=()=>{if(can('read_recordings'))loadLibrary()};
 function secondsLabel(n){const minutes=Math.floor(n/60);const seconds=(n%60).toFixed(1);return minutes+' min '+seconds+' s'}
 async function loadStats(){
  const area=$('statsGrid');$('statsMessage').textContent='Chargement des statistiques…';
@@ -98,9 +119,9 @@ async function loadStats(){
  $('statsMessage').textContent='';
  }catch(e){$('statsMessage').textContent='Statistiques indisponibles : '+e.message}
 }
-$('refreshStats').onclick=loadStats;
-loadStats();
+$('refreshStats').onclick=()=>{if(can('read_stats'))loadStats()};
 $('exportAsr').onclick=async()=>{
+ if(!can('export_corpus'))return;
  const button=$('exportAsr');button.disabled=true;$('exportMessage').textContent='Préparation du ZIP…';
  try{
  const response=await fetch('/v1/export/asr');
