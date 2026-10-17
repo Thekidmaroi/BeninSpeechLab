@@ -6,6 +6,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from pydantic import BaseModel
 from .security import COOKIE, SESSION_SECONDS, PERMISSIONS, check_password, configured, current_role, csrf_token, issue_session, require_admin, same_origin, secure_transport
+from .keycloak_admin import list_users as keycloak_list_users
 from .oidc import begin as oidc_begin, callback as oidc_callback, enabled as oidc_enabled
 from .core import ingest, MAX_BYTES, list_recordings, get_recording_audio, review_recording, corpus_stats, build_asr_export
 
@@ -93,6 +94,14 @@ def admin_logout(request: Request):
     response = RedirectResponse("/admin/login", status_code=303)
     response.delete_cookie(COOKIE, path="/")
     return response
+
+@app.get("/v1/admin/users")
+def admin_users(request: Request):
+    require_admin(request)
+    if current_role(request) != "super_admin":
+        raise HTTPException(403, "Super administrator role required")
+    return keycloak_list_users()
+
 
 @app.get("/health")
 def health():
