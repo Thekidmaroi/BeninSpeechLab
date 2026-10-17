@@ -87,3 +87,18 @@ def test_session_exposes_effective_permissions(role, expected):
         response = client.get("/v1/admin/session")
         assert response.status_code == 200
         assert set(response.json()["permissions"]) == expected
+
+
+@pytest.mark.parametrize("role", ["manager", "annotator"])
+def test_only_super_admin_can_list_users(role):
+    with TestClient(app) as client:
+        client.cookies.set(COOKIE, issue_session(role))
+        assert client.get("/v1/admin/users").status_code == 403
+
+
+def test_super_admin_users_requires_service_account_configuration(monkeypatch):
+    monkeypatch.delenv("BENINSPEECH_KC_ADMIN_CLIENT_ID", raising=False)
+    monkeypatch.delenv("BENINSPEECH_KC_ADMIN_CLIENT_SECRET", raising=False)
+    with TestClient(app) as client:
+        client.cookies.set(COOKIE, issue_session("super_admin"))
+        assert client.get("/v1/admin/users").status_code == 503
