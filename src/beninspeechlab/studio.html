@@ -37,6 +37,11 @@ button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#31465e;colo
 <button id="exportAsr">↓ Exporter le corpus ASR (.zip)</button>
 <p id="exportMessage" role="status"></p>
 <small>Avant tout partage externe, vérifie les consentements et les droits d'utilisation. Ce prototype reste local.</small>
+</section>
+<section id="usersSection" hidden><h2>4. Gestion des utilisateurs</h2>
+<p>Comptes et rôles synchronisés depuis Keycloak (lecture seule).</p>
+<button id="refreshUsers" class="secondary">↻ Actualiser les utilisateurs</button>
+<p id="usersMessage" role="status"></p><div id="usersList"></div>
 </section></main><script>
 const $=id=>document.getElementById(id);
 let csrfToken='';
@@ -51,9 +56,30 @@ fetch('/v1/admin/session').then(r=>{if(!r.ok)throw Error('Session expirée');ret
  $('roleLabel').textContent='Rôle : '+(names[role]||role);
  $('statsSection').hidden=!can('read_stats');
  $('exportSection').hidden=!can('export_corpus');
+ $('usersSection').hidden=role!=='super_admin';
+ if(role==='super_admin')loadUsers();
  if(can('read_recordings'))loadLibrary();
  if(can('read_stats'))loadStats();
 }).catch(()=>{location.href='/admin/login'});
+async function loadUsers(){
+ const area=$('usersList');area.replaceChildren();
+ $('usersMessage').textContent='Chargement des utilisateurs…';
+ try{
+  const response=await fetch('/v1/admin/users');
+  if(!response.ok){const detail=await response.json().catch(()=>({}));throw Error(detail.detail||'HTTP '+response.status)}
+  const users=await response.json();
+  $('usersMessage').textContent=users.length+' compte(s) affiché(s) (maximum 100).';
+  for(const user of users){
+   const article=document.createElement('article');
+   article.style.cssText='border-top:1px solid #344960;padding:12px 0';
+   const name=document.createElement('strong');name.textContent=user.username;
+   const details=document.createElement('p');details.className='muted';
+   details.textContent=(user.enabled?'Actif':'Désactivé')+' · Rôles : '+(user.roles.join(', ')||'Aucun rôle BeninSpeechLab');
+   article.append(name,details);area.append(article);
+  }
+ }catch(error){$('usersMessage').textContent='Utilisateurs indisponibles : '+error.message}
+}
+$('refreshUsers').onclick=()=>{if(role==='super_admin')loadUsers()};
 $('logout').onclick=async()=>{
  await fetch('/v1/admin/logout',{method:'POST',headers:{'X-CSRF-Token':csrfToken}});
  location.href='/admin/login';
